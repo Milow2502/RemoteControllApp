@@ -13,6 +13,7 @@
   "dependencies": {
     "@nut-tree-fork/nut-js": "^4.2.6",
     "express": "^5.2.1",
+    "selfsigned": "^5.5.0",
     "ws": "^8.21.1"
   }
 }
