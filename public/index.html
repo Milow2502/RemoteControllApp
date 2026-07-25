@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Тач-пульт ПК</title>
+    <style>
+        * { touch-action: none; -webkit-user-select: none; }
+        body { margin: 0; background: #000; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        video { width: 100vw; height: 100vh; object-fit: contain; }
+    </style>
+</head>
+<body>
+
+    <video id="remoteVideo" autoplay playsinline muted></video>
+
+    <script>
+        const ws = new WebSocket(`ws://${location.host}`);
+        const video = document.getElementById('remoteVideo');
+        
+        let pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        let screenWidth = 1920;
+        let screenHeight = 1080;
+
+        ws.onopen = async () => {
+            ws.send(JSON.stringify({ type: 'register', role: 'mobile' }));
+
+            // Создаем предложение WebRTC
+            pc.addTransceiver('video', { direction: 'recvonly' });
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send(JSON.stringify({ type: 'offer', offer: offer }));
+        };
+
+        pc.ontrack = (e) => { video.srcObject = e.streams[0]; };
+
+        pc.onicecandidate = (e) => {
+            if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+        };
+
+        ws.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'answer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                screenWidth = data.screenWidth;
+                screenHeight = data.screenHeight;
+            } else if (data.type === 'candidate') {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            }
+        };
+
+        // --- ОБРАБОТКА ТАЧ-ЖЕСТОВ НА СМАРТФОНЕ ---
+        let touchStartTime = 0;
+        let lastTouchY = 0;
+
+        function getNormalizedCoords(touch) {
+            const rect = video.getBoundingClientRect();
+            const x = (touch.clientX - rect.left) / rect.width;
+            const y = (touch.clientY - rect.top) / rect.height;
+            return { x, y, valid: x >= 0 && x <= 1 && y >= 0 && y <= 1 };
+        }
+
+        video.addEventListener('touchstart', (e) => {
+            touchStartTime = Date.now();
+
+            if (e.touches.length === 1) {
+                const coords = getNormalizedCoords(e.touches[0]);
+                if (coords.valid) {
+                    ws.send(JSON.stringify({ type: 'input_move', x: coords.x, y: coords.y, screenWidth, screenHeight }));
+                }
+            } else if (e.touches.length === 2) {
+                lastTouchY = e.touches[0].clientY;
+            }
+        });
+
+        video.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1) {
+                // Перемещение курсора следом за пальцем
+                const coords = getNormalizedCoords(e.touches[0]);
+                if (coords.valid) {
+                    ws.send(JSON.stringify({ type: 'input_move', x: coords.x, y: coords.y, screenWidth, screenHeight }));
+                }
+            } else if (e.touches.length === 2) {
+                // Прокрутка двумя пальцами
+                const currentY = e.touches[0].clientY;
+                const deltaY = lastTouchY - currentY;
+                lastTouchY = currentY;
+
+                ws.send(JSON.stringify({ type: 'input_scroll', deltaY }));
+            }
+        });
+
+        video.addEventListener('touchend', (e) => {
+            const touchDuration = Date.now() - touchStartTime;
+
+            // Если это был короткий касние (Tap) одним пальцем — делаем Клик
+            if (e.changedTouches.length === 1 && touchDuration < 300) {
+                const coords = getNormalizedCoords(e.changedTouches[0]);
+                if (coords.valid) {
+                    ws.send(JSON.stringify({
+                        type: 'input_tap',
+                        x: coords.x,
+                        y: coords.y,
+                        button: 'left',
+                        screenWidth,
+                        screenHeight
+                    }));
+                }
+            } 
+            // Долгое нажатие (> 500мс) — Правый клик
+            else if (e.changedTouches.length === 1 && touchDuration > 500) {
+                const coords = getNormalizedCoords(e.changedTouches[0]);
+                if (coords.valid) {
+                    ws.send(JSON.stringify({
+                        type: 'input_tap',
+                        x: coords.x,
+                        y: coords.y,
+                        button: 'right',
+                        screenWidth,
+                        screenHeight
+                    }));
+                }
+            }
+        });
+    </script>
+</body>
+</html>

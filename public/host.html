@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>ПК Хост - Выбор экрана</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #121212; color: #fff; padding: 2rem; }
+        button { background: #007acc; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #005999; }
+        #status { margin-top: 1rem; color: #4ec9b0; }
+    </style>
+</head>
+<body>
+    <h2>Управление ПК с телефона</h2>
+    <p>Нажмите кнопку ниже, чтобы выбрать монитор для трансляции:</p>
+    <button id="startBtn">Выбрать монитор и запустить</button>
+    <div id="status"></div>
+
+    <script>
+        const ws = new WebSocket(`ws://${location.host}`);
+        let pc;
+        let localStream;
+
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ type: 'register', role: 'host' }));
+        };
+
+        document.getElementById('startBtn').onclick = async () => {
+            try {
+                // Запрашиваем выбор монитора у браузера
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { frameRate: { ideal: 60, max: 60 } },
+                    audio: false
+                });
+
+                document.getElementById('status').innerText = 'Трансляция активна. Подключитесь с телефона!';
+                setupWebRTC();
+            } catch (err) {
+                console.error('Ошибка выбора экрана:', err);
+            }
+        };
+
+        function setupWebRTC() {
+            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+            };
+
+            ws.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    const track = localStream.getVideoTracks()[0];
+                    const settings = track.getSettings();
+
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+
+                    ws.send(JSON.stringify({
+                        type: 'answer',
+                        answer: answer,
+                        screenWidth: settings.width || window.screen.width,
+                        screenHeight: settings.height || window.screen.height
+                    }));
+                } else if (data.type === 'candidate') {
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                }
+            };
+        }
+    </script>
+</body>
+</html>

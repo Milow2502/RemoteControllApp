@@ -80,7 +80,7 @@ function getLocalIp() {
     return 'localhost';
 }
 
-const PORT = 3000;
+const PORT = 2000;
 server.listen(PORT, () => {
     const ip = getLocalIp();
     console.log(`\n==================================================`);
