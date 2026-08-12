@@ -59,14 +59,24 @@ function createServer() {
 
 function getLocalIp() {
     const interfaces = os.networkInterfaces();
+    const candidates = [];
+
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                return iface.address;
+                candidates.push({ name, address: iface.address });
             }
         }
     }
-    return 'localhost';
+
+    // Prefer private LAN ranges over VPN/CGNAT
+    const preferred = candidates.find(c =>
+        c.address.startsWith('192.168.') ||
+        c.address.startsWith('10.') ||
+        (c.address.startsWith('172.') && parseInt(c.address.split('.')[1]) >= 16 && parseInt(c.address.split('.')[1]) <= 31)
+    );
+
+    return preferred?.address || candidates[0]?.address || 'localhost';
 }
 
 function startServer(port = 2000, host = '0.0.0.0') {
