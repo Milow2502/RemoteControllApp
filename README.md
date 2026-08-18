@@ -1,13 +1,20 @@
 # Remote Control App
 
-A WebRTC-based remote control application that allows you to control your PC from a mobile device (phone/tablet) over the local network.
+A WebRTC-based remote control application that allows you to control your PC from a mobile device (phone/tablet) over the local network with low-latency screen streaming and touch-to-mouse translation.
 
 ## Features
 
-- **Screen Sharing**: Stream your PC screen to mobile device via WebRTC
-- **Touch Control**: Mouse movement, left/right click, and scroll via touch gestures
-- **Low Latency**: Direct peer-to-peer connection using WebRTC
-- **Cross-platform**: Works on Windows, macOS, Linux (server) and any device with a modern browser (client)
+- **Screen Sharing**: Stream your PC screen or specific application window to your mobile device via WebRTC.
+- **Touch Control**:
+  - 🖱️ **Single finger drag**: Smooth mouse cursor movement (~60fps)
+  - 👆 **Single tap (< 400ms)**: Left click
+  - ⏱️ **Long press (> 500ms)**: Right click
+  - ✌️ **Two finger drag**: Smooth vertical scrolling
+  - 🔘 **Floating Quick Bar**: Fullscreen mode, dedicated Right-click mode toggle, and reconnect button
+- **Low Latency & High Responsiveness**: Direct peer-to-peer WebRTC connection with optimized 0ms mouse delay (`autoDelayMs: 0`).
+- **Letterbox / Pillarbox Compensation**: Exact touch coordinate mapping regardless of phone/monitor aspect ratios and orientation.
+- **Auto QR Code**: Built-in QR code on the host dashboard for instant connection without manual IP typing.
+- **Cross-platform**: Works on Windows, macOS, Linux (server) and any device with a modern mobile browser (client).
 
 ## Architecture
 
@@ -31,9 +38,10 @@ A WebRTC-based remote control application that allows you to control your PC fro
 
 | Component | File | Description |
 |-----------|------|-------------|
-| Signaling Server | `server.js` | Express + WebSocket server for WebRTC signaling and input forwarding |
-| Host Page | `public/host.html` | PC screen capture and WebRTC sender |
-| Client Page | `public/index.html` | Mobile video receiver and touch input handler |
+| Signaling Server | `server.js` | Express + WebSocket server for WebRTC signaling, mouse injection, and input forwarding |
+| Host Dashboard | `public/host.html` | PC screen capture, QR code generator, and WebRTC stream sender |
+| Client Touchpad | `public/index.html` | Mobile video receiver and touch input gesture handler |
+| Issues & Changelog | `CHANGELOG.md` | Detailed list of resolved issues, signaling fixes, and updates |
 
 ## Prerequisites
 
@@ -45,7 +53,7 @@ A WebRTC-based remote control application that allows you to control your PC fro
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/Milow2502/RemoteControllApp.git
 cd RemoteControllApp
 
 # Install dependencies
@@ -54,144 +62,53 @@ npm install
 
 ## Usage
 
-### Start the Server
+### 1. Start the Server
 
 ```bash
 npm start
 ```
 
-The server will start on port 2000 and display connection URLs:
+The server will start on port 2000 and display the connection URLs:
 
 ```
-Server listening on 0.0.0.0:2000
-1. Open on PC: http://localhost:2000/host.html
-2. Open on PHONE: http://192.168.1.XXX:2000
+==================================================
+Сервер RemoteControlApp запущен на 0.0.0.0:2000
+1. Откройте на ПК:    http://localhost:2000/host.html
+2. Откройте на ТЕЛЕФОНЕ: http://192.168.1.XXX:2000
+==================================================
 ```
 
-### Connect from PC (Host)
+### 2. Connect from PC (Host)
 
-1. Open `http://localhost:2000/host.html` in a browser on your PC
-2. Click **"Выбрать монитор и запустить"** (Select monitor and start)
-3. Choose the screen/window to share in the browser's media picker dialog
-4. The status will show "Трансляция активна. Подключитесь с телефона!"
+1. Open `http://localhost:2000/host.html` in a browser on your PC.
+2. Click **"📹 Выбрать экран и начать трансляцию"** (Select screen and start streaming).
+3. Select your screen or window in the browser's media dialog.
 
-### Connect from Mobile Device
+### 3. Connect from Mobile Device
 
-1. Ensure mobile is on the same Wi-Fi network as PC
-2. Open `http://<PC-IP>:2000` (e.g., `http://192.168.1.42:2000`) on mobile browser
-3. The video stream should appear automatically
+1. Ensure your mobile device is connected to the same Wi-Fi network.
+2. Scan the **QR code** displayed on `host.html` with your phone's camera, or open `http://<PC-IP>:2000` directly.
+3. The video stream will connect automatically and touch controls will be active immediately!
 
 ## Touch Controls (Mobile)
 
 | Gesture | Action |
 |---------|--------|
-| Single finger drag | Move mouse cursor |
-| Single tap (< 300ms) | Left click |
-| Long press (> 500ms) | Right click |
-| Two finger drag | Scroll |
+| 1 finger drag | Move mouse cursor smoothly |
+| Single tap (< 400ms) | Left click (LMB) |
+| Long press (> 500ms) | Right click (RMB) |
+| 2 fingers drag | Scroll up / down |
+| Floating Action Bar | Fullscreen mode, Toggle RMB mode, Reconnect |
 
-## Network Configuration
-
-### Firewall (Windows)
-
-Allow Node.js through Windows Firewall:
-
-```powershell
-# Run as Administrator
-New-NetFirewallRule -DisplayName "RemoteControlApp" -Direction Inbound -LocalPort 2000 -Protocol TCP -Action Allow
-```
-
-### Find PC IP Address
-
-```bash
-# Windows
-ipconfig | findstr IPv4
-
-# macOS/Linux
-ifconfig | grep inet
-```
-
-## Development
-
-### Project Structure
-
-```
-RemoteControllApp/
-├── server.js           # Signaling + input server
-├── package.json
-├── public/
-│   ├── host.html       # PC host page (screen sender)
-│   └── index.html      # Mobile client page (video receiver)
-├── tests/              # Test files
-└── README.md
-```
-
-### Run Tests
+## Run Tests
 
 ```bash
 npm test
 ```
 
-### Add Custom STUN/TURN Servers
+## Issues & Changelog
 
-Edit the `iceServers` array in both HTML files:
-
-```javascript
-const pc = new RTCPeerConnection({
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'turn:your-turn-server.com', username: 'user', credential: 'pass' }
-    ]
-});
-```
-
-## API Reference
-
-### WebSocket Messages
-
-#### Host → Server
-
-```json
-{ "type": "register", "role": "host" }
-```
-
-#### Mobile → Server
-
-```json
-{ "type": "register", "role": "mobile" }
-```
-
-#### WebRTC Signaling (bidirectional)
-
-```json
-{ "type": "offer", "offer": RTCSessionDescriptionInit }
-{ "type": "answer", "answer": RTCSessionDescriptionInit, "screenWidth": 1920, "screenHeight": 1080 }
-{ "type": "candidate", "candidate": RTCIceCandidateInit }
-```
-
-#### Input Events (Mobile → Server → Host)
-
-```json
-{ "type": "input_move", "x": 0.5, "y": 0.5, "screenWidth": 1920, "screenHeight": 1080 }
-{ "type": "input_tap", "x": 0.5, "y": 0.5, "button": "left", "screenWidth": 1920, "screenHeight": 1080 }
-{ "type": "input_scroll", "deltaY": -100 }
-```
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| "Cannot connect from phone" | Check firewall, ensure both on same network, verify PC IP |
-| Black video on mobile | Browser blocked autoplay; tap video to play, or allow autoplay in settings |
-| High latency | Use 5GHz Wi-Fi, reduce screen resolution in `getDisplayMedia` |
-| Input not working | Verify WebSocket connection, check browser console for errors |
-| Permission denied (screen share) | Allow screen recording permission in browser/OS settings |
-
-## Security Notes
-
-- **Local network only**: No authentication; anyone on the network can connect
-- **No encryption** on WebSocket (use TURN over TLS for production)
-- **Input injection**: Mouse/keyboard control runs with your user permissions
+See [`CHANGELOG.md`](./CHANGELOG.md) for detailed descriptions of resolved issues (WebRTC race conditions, video stream playback fixes, aspect ratio coordinate calculation, etc.).
 
 ## License
 

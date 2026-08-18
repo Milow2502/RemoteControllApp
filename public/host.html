@@ -2,75 +2,565 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>ПК Хост - Выбор экрана</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ПК Хост — Трансляция и управление</title>
     <style>
-        body { font-family: system-ui, sans-serif; background: #121212; color: #fff; padding: 2rem; }
-        button { background: #007acc; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
-        button:hover { background: #005999; }
-        #status { margin-top: 1rem; color: #4ec9b0; }
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 640px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .status-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .status-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .status-value {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--danger-color);
+            display: inline-block;
+        }
+
+        .dot.active {
+            background-color: var(--success-color);
+            box-shadow: 0 0 8px var(--success-color);
+        }
+
+        .dot.warning {
+            background-color: var(--warning-color);
+            box-shadow: 0 0 8px var(--warning-color);
+        }
+
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn.stop {
+            background: var(--danger-color);
+        }
+
+        .btn.stop:hover {
+            background: #dc2626;
+        }
+
+        .qr-section {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .qr-section h3 {
+            font-size: 15px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .qr-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .qr-canvas {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .url-box {
+            display: flex;
+            align-items: center;
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            gap: 8px;
+        }
+
+        .url-text {
+            font-family: monospace;
+            font-size: 14px;
+            color: #38bdf8;
+            flex-grow: 1;
+            text-align: left;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .btn-copy {
+            background: #334155;
+            color: #fff;
+            border: none;
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-copy:hover {
+            background: #475569;
+        }
+
+        .stream-preview {
+            margin-top: 20px;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--card-border);
+            display: none;
+        }
+
+        .stream-preview video {
+            width: 100%;
+            max-height: 200px;
+            background: #000;
+            display: block;
+        }
+
+        .preview-label {
+            background: #0f172a;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--card-border);
+        }
     </style>
 </head>
 <body>
-    <h2>Управление ПК с телефона</h2>
-    <p>Нажмите кнопку ниже, чтобы выбрать монитор для трансляции:</p>
-    <button id="startBtn">Выбрать монитор и запустить</button>
-    <div id="status"></div>
+    <div class="container">
+        <div class="header">
+            <h1>🖥️ ПК Хост — Управление экраном</h1>
+            <p>Трансляция рабочего стола и управление курсором с телефона</p>
+        </div>
 
+        <div class="status-grid">
+            <div class="status-card">
+                <div class="status-label">Сервер (WebSocket)</div>
+                <div class="status-value">
+                    <span id="wsDot" class="dot"></span>
+                    <span id="wsStatus">Подключение...</span>
+                </div>
+            </div>
+            <div class="status-card">
+                <div class="status-label">Телефон (Клиент)</div>
+                <div class="status-value">
+                    <span id="mobileDot" class="dot"></span>
+                    <span id="mobileStatus">Не подключен</span>
+                </div>
+            </div>
+            <div class="status-card">
+                <div class="status-label">Статус трансляции</div>
+                <div class="status-value">
+                    <span id="streamDot" class="dot"></span>
+                    <span id="streamStatus">Не активна</span>
+                </div>
+            </div>
+            <div class="status-card">
+                <div class="status-label">Разрешение потока</div>
+                <div class="status-value" id="resolutionStatus">-- x --</div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="toggleStreamBtn" class="btn">
+                <span>📹 Выбрать экран и начать трансляцию</span>
+            </button>
+        </div>
+
+        <div class="stream-preview" id="streamPreviewContainer">
+            <div class="preview-label">Предпросмотр трансляции хоста:</div>
+            <video id="previewVideo" autoplay playsinline muted></video>
+        </div>
+
+        <div class="qr-section">
+            <h3>📱 Адрес для подключения смартфона:</h3>
+            <div class="qr-container">
+                <canvas id="qrCanvas" class="qr-canvas" width="160" height="160"></canvas>
+            </div>
+            <div class="url-box">
+                <span class="url-text" id="mobileUrl">Загрузка адреса...</span>
+                <button class="btn-copy" id="copyBtn">Копировать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightweight QR Generator -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <script>
-        const ws = new WebSocket(`ws://${location.host}`);
-        let pc;
-        let localStream;
+        let ws = null;
+        let pc = null;
+        let localStream = null;
+        let isStreaming = false;
+        let isMobileOnline = false;
+        let pendingIceCandidates = [];
 
-        ws.onopen = () => {
-            ws.send(JSON.stringify({ type: 'register', role: 'host' }));
-        };
+        const wsDot = document.getElementById('wsDot');
+        const wsStatus = document.getElementById('wsStatus');
+        const mobileDot = document.getElementById('mobileDot');
+        const mobileStatus = document.getElementById('mobileStatus');
+        const streamDot = document.getElementById('streamDot');
+        const streamStatus = document.getElementById('streamStatus');
+        const resolutionStatus = document.getElementById('resolutionStatus');
+        const toggleStreamBtn = document.getElementById('toggleStreamBtn');
+        const previewVideo = document.getElementById('previewVideo');
+        const streamPreviewContainer = document.getElementById('streamPreviewContainer');
+        const mobileUrl = document.getElementById('mobileUrl');
+        const copyBtn = document.getElementById('copyBtn');
+        const qrCanvas = document.getElementById('qrCanvas');
 
-        document.getElementById('startBtn').onclick = async () => {
-            try {
-                // Запрашиваем выбор монитора у браузера
-                localStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: { frameRate: { ideal: 60, max: 60 } },
-                    audio: false
+        // Setup mobile connection URL
+        const mobileFullUrl = `http://${location.hostname}:${location.port || '2000'}`;
+        mobileUrl.innerText = mobileFullUrl;
+
+        // Render QR Code
+        function renderQR() {
+            if (typeof QRCode !== 'undefined') {
+                QRCode.toCanvas(qrCanvas, mobileFullUrl, { width: 160, margin: 1 }, (err) => {
+                    if (err) console.error('Ошибка генерации QR:', err);
                 });
+            }
+        }
+        renderQR();
 
-                document.getElementById('status').innerText = 'Трансляция активна. Подключитесь с телефона!';
-                setupWebRTC();
+        copyBtn.onclick = async () => {
+            try {
+                await navigator.clipboard.writeText(mobileFullUrl);
+                copyBtn.innerText = 'Скопировано!';
+                setTimeout(() => { copyBtn.innerText = 'Копировать'; }, 2000);
             } catch (err) {
-                console.error('Ошибка выбора экрана:', err);
+                prompt('Скопируйте адрес:', mobileFullUrl);
             }
         };
 
-        function setupWebRTC() {
-            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        // Initialize WebSocket connection
+        function initWebSocket() {
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${wsProtocol}//${location.host}`);
 
-            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            ws.onopen = () => {
+                wsDot.className = 'dot active';
+                wsStatus.innerText = 'Подключен';
+                ws.send(JSON.stringify({ type: 'register', role: 'host' }));
+                
+                // If stream was active before reconnect, report status
+                if (isStreaming) {
+                    ws.send(JSON.stringify({ type: 'host_stream_status', active: true }));
+                }
+            };
 
-            pc.onicecandidate = (e) => {
-                if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+            ws.onclose = () => {
+                wsDot.className = 'dot';
+                wsStatus.innerText = 'Переподключение...';
+                setTimeout(initWebSocket, 2000);
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket ошибка:', err);
             };
 
             ws.onmessage = async (event) => {
-                const data = JSON.parse(event.data);
+                try {
+                    const data = JSON.parse(event.data);
 
-                if (data.type === 'offer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                    const track = localStream.getVideoTracks()[0];
-                    const settings = track.getSettings();
+                    if (data.type === 'mobile_status') {
+                        isMobileOnline = !!data.online;
+                        if (isMobileOnline) {
+                            mobileDot.className = 'dot active';
+                            mobileStatus.innerText = 'Подключен';
+                            // If we are already streaming, initiate WebRTC offer for the newly connected mobile
+                            if (isStreaming && localStream) {
+                                createWebRTCOffer();
+                            }
+                        } else {
+                            mobileDot.className = 'dot';
+                            mobileStatus.innerText = 'Не подключен';
+                            cleanupPeerConnection();
+                        }
+                    }
 
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
+                    if (data.type === 'request_stream') {
+                        if (isStreaming && localStream) {
+                            createWebRTCOffer();
+                        }
+                    }
 
-                    ws.send(JSON.stringify({
-                        type: 'answer',
-                        answer: answer,
-                        screenWidth: settings.width || window.screen.width,
-                        screenHeight: settings.height || window.screen.height
-                    }));
-                } else if (data.type === 'candidate') {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    if (data.type === 'answer') {
+                        if (pc) {
+                            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                            // Drain queued candidates
+                            while (pendingIceCandidates.length > 0) {
+                                const cand = pendingIceCandidates.shift();
+                                try {
+                                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                                } catch (e) {
+                                    console.error('Ошибка добавления отложенного ICE кандидата:', e);
+                                }
+                            }
+                        }
+                    }
+
+                    if (data.type === 'candidate') {
+                        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+                            try {
+                                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                            } catch (e) {
+                                console.error('Ошибка добавления ICE кандидата:', e);
+                            }
+                        } else {
+                            pendingIceCandidates.push(data.candidate);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Ошибка обработки сообщения хоста:', e);
                 }
             };
         }
+
+        initWebSocket();
+
+        // WebRTC setup and offer creation
+        async function createWebRTCOffer() {
+            if (!localStream) return;
+
+            cleanupPeerConnection();
+
+            pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            });
+
+            pendingIceCandidates = [];
+
+            // Add all tracks from local screen stream
+            localStream.getTracks().forEach(track => {
+                pc.addTrack(track, localStream);
+            });
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+                }
+            };
+
+            pc.onconnectionstatechange = () => {
+                console.log('WebRTC Connection State:', pc.connectionState);
+                if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                    // if failed, ready to reconnect when needed
+                }
+            };
+
+            try {
+                const offer = await pc.createOffer({
+                    offerToReceiveVideo: false,
+                    offerToReceiveAudio: false
+                });
+                await pc.setLocalDescription(offer);
+
+                const videoTrack = localStream.getVideoTracks()[0];
+                const settings = videoTrack ? videoTrack.getSettings() : {};
+                const screenWidth = settings.width || window.screen.width;
+                const screenHeight = settings.height || window.screen.height;
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'offer',
+                        offer: offer,
+                        screenWidth: screenWidth,
+                        screenHeight: screenHeight
+                    }));
+                }
+            } catch (err) {
+                console.error('Ошибка создания WebRTC Offer:', err);
+            }
+        }
+
+        function cleanupPeerConnection() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            pendingIceCandidates = [];
+        }
+
+        // Screen Capture Management
+        async function startScreenShare() {
+            try {
+                localStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        frameRate: { ideal: 60, max: 60 },
+                        cursor: "always"
+                    },
+                    audio: false
+                });
+
+                const videoTrack = localStream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+                
+                isStreaming = true;
+                streamDot.className = 'dot active';
+                streamStatus.innerText = 'Трансляция активна';
+                resolutionStatus.innerText = `${settings.width || window.screen.width} x ${settings.height || window.screen.height}`;
+                
+                toggleStreamBtn.className = 'btn stop';
+                toggleStreamBtn.innerHTML = '<span>⏹️ Остановить трансляцию</span>';
+
+                previewVideo.srcObject = localStream;
+                streamPreviewContainer.style.display = 'block';
+
+                // Listen for browser "Stop sharing" event
+                videoTrack.onended = () => {
+                    stopScreenShare();
+                };
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'host_stream_status', active: true }));
+                }
+
+                // If mobile is already connected, start WebRTC
+                createWebRTCOffer();
+
+            } catch (err) {
+                console.error('Ошибка захвата экрана:', err);
+                stopScreenShare();
+            }
+        }
+
+        function stopScreenShare() {
+            isStreaming = false;
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+
+            cleanupPeerConnection();
+
+            streamDot.className = 'dot';
+            streamStatus.innerText = 'Не активна';
+            resolutionStatus.innerText = '-- x --';
+            
+            toggleStreamBtn.className = 'btn';
+            toggleStreamBtn.innerHTML = '<span>📹 Выбрать экран и начать трансляцию</span>';
+
+            previewVideo.srcObject = null;
+            streamPreviewContainer.style.display = 'none';
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'host_stream_status', active: false }));
+            }
+        }
+
+        toggleStreamBtn.onclick = () => {
+            if (isStreaming) {
+                stopScreenShare();
+            } else {
+                startScreenShare();
+            }
+        };
     </script>
 </body>
 </html>

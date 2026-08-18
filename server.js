@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { mouse, Point, Button } = require('@nut-tree-fork/nut-js');
+const { mouse, Point, Button, screen } = require('@nut-tree-fork/nut-js');
 const path = require('path');
 const os = require('os');
 
@@ -12,43 +12,145 @@ function createServer() {
 
     app.use(express.static(path.join(__dirname, 'public')));
 
-    mouse.config.mouseSpeed = 1000;
+    // Nut-js configuration for instant responsiveness
+    mouse.config.autoDelayMs = 0;
+    mouse.config.mouseSpeed = 2000;
 
     let hostSocket = null;
     let mobileSocket = null;
+    let isHostStreaming = false;
 
     wss.on('connection', (ws) => {
         ws.on('message', async (message) => {
-            const data = JSON.parse(message);
+            try {
+                const data = JSON.parse(message);
 
-            if (data.type === 'register') {
-                if (data.role === 'host') hostSocket = ws;
-                if (data.role === 'mobile') mobileSocket = ws;
-            }
+                if (data.type === 'register') {
+                    if (data.role === 'host') {
+                        hostSocket = ws;
+                        ws.role = 'host';
+                        // Notify mobile that host is online
+                        if (mobileSocket && mobileSocket.readyState === 1) {
+                            mobileSocket.send(JSON.stringify({
+                                type: 'host_status',
+                                online: true,
+                                streaming: isHostStreaming
+                            }));
+                        }
+                    } else if (data.role === 'mobile') {
+                        mobileSocket = ws;
+                        ws.role = 'mobile';
+                        // Send current host status to mobile
+                        const hostOnline = !!(hostSocket && hostSocket.readyState === 1);
+                        ws.send(JSON.stringify({
+                            type: 'host_status',
+                            online: hostOnline,
+                            streaming: isHostStreaming
+                        }));
 
-            if (['offer', 'answer', 'candidate'].includes(data.type)) {
-                if (ws === hostSocket && mobileSocket) mobileSocket.send(JSON.stringify(data));
-                if (ws === mobileSocket && hostSocket) hostSocket.send(JSON.stringify(data));
-            }
-
-            if (data.type === 'input_move' || data.type === 'input_tap' || data.type === 'input_scroll') {
-                const screenWidth = data.screenWidth || 1920;
-                const screenHeight = data.screenHeight || 1080;
-                const targetX = Math.round(data.x * screenWidth);
-                const targetY = Math.round(data.y * screenHeight);
-
-                try {
-                    if (data.type === 'input_move') {
-                        await mouse.setPosition(new Point(targetX, targetY));
-                    } else if (data.type === 'input_tap') {
-                        await mouse.setPosition(new Point(targetX, targetY));
-                        await mouse.click(data.button === 'right' ? Button.RIGHT : Button.LEFT);
-                    } else if (data.type === 'input_scroll') {
-                        if (data.deltaY > 0) await mouse.scrollDown(100);
-                        else await mouse.scrollUp(100);
+                        // Notify host that mobile connected
+                        if (hostOnline) {
+                            hostSocket.send(JSON.stringify({
+                                type: 'mobile_status',
+                                online: true
+                            }));
+                        }
                     }
-                } catch (err) {
-                    console.error('Ошибка ввода:', err);
+                    return;
+                }
+
+                // Host streaming state updates
+                if (data.type === 'host_stream_status') {
+                    if (ws === hostSocket) {
+                        isHostStreaming = !!data.active;
+                        if (mobileSocket && mobileSocket.readyState === 1) {
+                            mobileSocket.send(JSON.stringify({
+                                type: 'host_stream_status',
+                                active: isHostStreaming
+                            }));
+                        }
+                    }
+                    return;
+                }
+
+                // Request stream from mobile to host
+                if (data.type === 'request_stream') {
+                    if (hostSocket && hostSocket.readyState === 1) {
+                        hostSocket.send(JSON.stringify({ type: 'request_stream' }));
+                    }
+                    return;
+                }
+
+                // Forward WebRTC signaling between host and mobile
+                if (['offer', 'answer', 'candidate'].includes(data.type)) {
+                    if (ws === hostSocket && mobileSocket && mobileSocket.readyState === 1) {
+                        mobileSocket.send(JSON.stringify(data));
+                    } else if (ws === mobileSocket && hostSocket && hostSocket.readyState === 1) {
+                        hostSocket.send(JSON.stringify(data));
+                    }
+                    return;
+                }
+
+                // Touch / Mouse input events from mobile to host
+                if (data.type === 'input_move' || data.type === 'input_tap' || data.type === 'input_scroll') {
+                    let screenWidth = data.screenWidth || 1920;
+                    let screenHeight = data.screenHeight || 1080;
+
+                    // Attempt to get OS desktop resolution if nut-js screen is available
+                    try {
+                        const w = await screen.width();
+                        const h = await screen.height();
+                        if (w && h) {
+                            screenWidth = w;
+                            screenHeight = h;
+                        }
+                    } catch {
+                        // fallback to client-provided dimensions
+                    }
+
+                    const targetX = Math.max(0, Math.min(screenWidth - 1, Math.round(data.x * screenWidth)));
+                    const targetY = Math.max(0, Math.min(screenHeight - 1, Math.round(data.y * screenHeight)));
+
+                    try {
+                        if (data.type === 'input_move') {
+                            await mouse.setPosition(new Point(targetX, targetY));
+                        } else if (data.type === 'input_tap') {
+                            await mouse.setPosition(new Point(targetX, targetY));
+                            await mouse.click(data.button === 'right' ? Button.RIGHT : Button.LEFT);
+                        } else if (data.type === 'input_scroll') {
+                            if (data.deltaY > 0) {
+                                await mouse.scrollDown(Math.min(200, Math.abs(data.deltaY)));
+                            } else {
+                                await mouse.scrollUp(Math.min(200, Math.abs(data.deltaY)));
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Ошибка обработки ввода:', err.message);
+                    }
+                }
+            } catch (parseErr) {
+                console.error('Ошибка парсинга WebSocket сообщения:', parseErr.message);
+            }
+        });
+
+        ws.on('close', () => {
+            if (ws === hostSocket) {
+                hostSocket = null;
+                isHostStreaming = false;
+                if (mobileSocket && mobileSocket.readyState === 1) {
+                    mobileSocket.send(JSON.stringify({
+                        type: 'host_status',
+                        online: false,
+                        streaming: false
+                    }));
+                }
+            } else if (ws === mobileSocket) {
+                mobileSocket = null;
+                if (hostSocket && hostSocket.readyState === 1) {
+                    hostSocket.send(JSON.stringify({
+                        type: 'mobile_status',
+                        online: false
+                    }));
                 }
             }
         });
@@ -84,9 +186,9 @@ function startServer(port = 2000, host = '0.0.0.0') {
     server.listen(port, host, () => {
         const ip = getLocalIp();
         console.log(`\n==================================================`);
-        console.log(`Server listening on ${host}:${port}`);
-        console.log(`1. Open on PC: http://localhost:${port}/host.html`);
-        console.log(`2. Open on PHONE: http://${ip}:${port}`);
+        console.log(`Сервер RemoteControlApp запущен на ${host}:${port}`);
+        console.log(`1. Откройте на ПК:    http://localhost:${port}/host.html`);
+        console.log(`2. Откройте на ТЕЛЕФОНЕ: http://${ip}:${port}`);
         console.log(`==================================================\n`);
     });
     return server;

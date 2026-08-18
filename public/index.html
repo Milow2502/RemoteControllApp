@@ -5,123 +5,578 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Тач-пульт ПК</title>
     <style>
-        * { touch-action: none; -webkit-user-select: none; }
-        body { margin: 0; background: #000; overflow: hidden; height: 100vh; display: flex; align-items: center; justify-content: center; }
-        video { width: 100vw; height: 100vh; object-fit: contain; }
+        * {
+            box-sizing: border-box;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        #remoteVideo {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            display: block;
+        }
+
+        /* Overlay message / status */
+        .status-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            z-index: 50;
+            padding: 24px;
+            text-align: center;
+            transition: opacity 0.3s ease;
+        }
+
+        .status-overlay.hidden {
+            display: none;
+            opacity: 0;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 4px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .status-subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            max-width: 320px;
+            line-height: 1.4;
+        }
+
+        /* Floating quick-control bar */
+        .control-bar {
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 30px;
+            padding: 6px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 100;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .control-bar.collapsed {
+            opacity: 0.3;
+            transform: translateX(-50%) translateY(10px);
+        }
+
+        .btn-ctrl {
+            background: none;
+            border: none;
+            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-ctrl:active {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-ctrl.active {
+            background: #3b82f6;
+            color: white;
+        }
+
+        /* Visual tap ripple */
+        .tap-indicator {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.4);
+            border: 2px solid #60a5fa;
+            transform: translate(-50%, -50%) scale(0);
+            pointer-events: none;
+            z-index: 40;
+            animation: ripple 0.35s ease-out forwards;
+        }
+
+        @keyframes ripple {
+            0% { transform: translate(-50%, -50%) scale(0.2); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+        }
     </style>
 </head>
 <body>
 
-    <video id="remoteVideo" autoplay playsinline muted></video>
+    <video id="remoteVideo" autoplay playsinline webkit-playsinline muted></video>
+
+    <!-- Overlay with status / connecting spinner -->
+    <div id="statusOverlay" class="status-overlay">
+        <div class="spinner" id="overlaySpinner"></div>
+        <div class="status-title" id="overlayTitle">Подключение к серверу...</div>
+        <div class="status-subtitle" id="overlaySubtitle">Убедитесь, что ПК хост запущен и трансляция экрана активна.</div>
+    </div>
+
+    <!-- Quick Floating Action Bar -->
+    <div id="controlBar" class="control-bar">
+        <button id="btnFullscreen" class="btn-ctrl">⛶ Во весь экран</button>
+        <button id="btnRightClickMode" class="btn-ctrl">🖱️ ПКМ: Выкл</button>
+        <button id="btnReconnect" class="btn-ctrl">🔄 Обновить</button>
+    </div>
 
     <script>
-        const ws = new WebSocket(`ws://${location.host}`);
         const video = document.getElementById('remoteVideo');
-        
-        let pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        const statusOverlay = document.getElementById('statusOverlay');
+        const overlaySpinner = document.getElementById('overlaySpinner');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlaySubtitle = document.getElementById('overlaySubtitle');
+        const btnFullscreen = document.getElementById('btnFullscreen');
+        const btnRightClickMode = document.getElementById('btnRightClickMode');
+        const btnReconnect = document.getElementById('btnReconnect');
+        const controlBar = document.getElementById('controlBar');
+
+        let ws = null;
+        let pc = null;
+        let pendingIceCandidates = [];
         let screenWidth = 1920;
         let screenHeight = 1080;
+        let isRightClickNext = false;
+        let isHostOnline = false;
+        let isHostStreaming = false;
 
-        ws.onopen = async () => {
-            ws.send(JSON.stringify({ type: 'register', role: 'mobile' }));
+        // Ensure video is properly configured for mobile autoplay
+        video.muted = true;
+        video.playsInline = true;
+        video.autoplay = true;
 
-            // Создаем предложение WebRTC
-            pc.addTransceiver('video', { direction: 'recvonly' });
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({ type: 'offer', offer: offer }));
-        };
-
-        pc.ontrack = (e) => { video.srcObject = e.streams[0]; };
-
-        pc.onicecandidate = (e) => {
-            if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
-        };
-
-        ws.onmessage = async (event) => {
-            const data = JSON.parse(event.data);
-            if (data.type === 'answer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                screenWidth = data.screenWidth;
-                screenHeight = data.screenHeight;
-            } else if (data.type === 'candidate') {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-            }
-        };
-
-        // --- ОБРАБОТКА ТАЧ-ЖЕСТОВ НА СМАРТФОНЕ ---
-        let touchStartTime = 0;
-        let lastTouchY = 0;
-
-        function getNormalizedCoords(touch) {
-            const rect = video.getBoundingClientRect();
-            const x = (touch.clientX - rect.left) / rect.width;
-            const y = (touch.clientY - rect.top) / rect.height;
-            return { x, y, valid: x >= 0 && x <= 1 && y >= 0 && y <= 1 };
+        function showOverlay(title, subtitle, showSpinner = true) {
+            statusOverlay.classList.remove('hidden');
+            overlayTitle.innerText = title;
+            overlaySubtitle.innerText = subtitle;
+            overlaySpinner.style.display = showSpinner ? 'block' : 'none';
         }
 
-        video.addEventListener('touchstart', (e) => {
-            touchStartTime = Date.now();
+        function hideOverlay() {
+            statusOverlay.classList.add('hidden');
+        }
 
-            if (e.touches.length === 1) {
-                const coords = getNormalizedCoords(e.touches[0]);
-                if (coords.valid) {
-                    ws.send(JSON.stringify({ type: 'input_move', x: coords.x, y: coords.y, screenWidth, screenHeight }));
-                }
-            } else if (e.touches.length === 2) {
-                lastTouchY = e.touches[0].clientY;
+        // Initialize WebSocket and WebRTC Handshake
+        function initConnection() {
+            if (ws) {
+                try { ws.close(); } catch (_) {}
             }
-        });
+            cleanupPeerConnection();
 
-        video.addEventListener('touchmove', (e) => {
+            showOverlay('Подключение к серверу...', 'Инициализация WebSocket соединения...');
+
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${wsProtocol}//${location.host}`);
+
+            ws.onopen = () => {
+                showOverlay('Ожидание хоста...', 'Поиск запущенного хоста на ПК...');
+                ws.send(JSON.stringify({ type: 'register', role: 'mobile' }));
+            };
+
+            ws.onclose = () => {
+                showOverlay('Соединение потеряно', 'Попытка переподключения через 2 сек...', true);
+                setTimeout(initConnection, 2000);
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket ошибка:', err);
+            };
+
+            ws.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === 'host_status') {
+                        isHostOnline = !!data.online;
+                        isHostStreaming = !!data.streaming;
+
+                        if (!isHostOnline) {
+                            showOverlay('ПК Хост не запущен', 'Откройте host.html на компьютере и запустите трансляцию', false);
+                            cleanupPeerConnection();
+                        } else if (!isHostStreaming) {
+                            showOverlay('Ожидание трансляции', 'Нажмите "Выбрать экран" на компьютере в host.html', true);
+                            cleanupPeerConnection();
+                        } else {
+                            // Host is streaming, request stream
+                            showOverlay('Подключение к видеопотоку...', 'Настройка WebRTC соединения...', true);
+                            ws.send(JSON.stringify({ type: 'request_stream' }));
+                        }
+                    }
+
+                    if (data.type === 'host_stream_status') {
+                        isHostStreaming = !!data.active;
+                        if (isHostStreaming) {
+                            showOverlay('Подключение к видеопотоку...', 'Запрос видеотрансляции...', true);
+                            ws.send(JSON.stringify({ type: 'request_stream' }));
+                        } else {
+                            showOverlay('Трансляция остановлена', 'Трансляция экрана на ПК завершена.', false);
+                            cleanupPeerConnection();
+                            video.srcObject = null;
+                        }
+                    }
+
+                    if (data.type === 'offer') {
+                        await handleWebRTCOffer(data);
+                    }
+
+                    if (data.type === 'candidate') {
+                        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+                            try {
+                                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                            } catch (e) {
+                                console.error('Ошибка добавления ICE кандидата:', e);
+                            }
+                        } else {
+                            pendingIceCandidates.push(data.candidate);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Ошибка обработки сообщения на клиенте:', err);
+                }
+            };
+        }
+
+        async function handleWebRTCOffer(data) {
+            cleanupPeerConnection();
+
+            pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            });
+
+            pendingIceCandidates = [];
+
+            if (data.screenWidth) screenWidth = data.screenWidth;
+            if (data.screenHeight) screenHeight = data.screenHeight;
+
+            pc.ontrack = (event) => {
+                if (event.streams && event.streams[0]) {
+                    video.srcObject = event.streams[0];
+                    video.play().then(() => {
+                        hideOverlay();
+                    }).catch(err => {
+                        console.warn('Автовоспроизведение заблокировано браузером, ожидается тап:', err);
+                        showOverlay('Коснитесь экрана', 'Нажмите в любом месте, чтобы начать просмотр', false);
+                    });
+                }
+            };
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+                }
+            };
+
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+                // Process queued ICE candidates
+                while (pendingIceCandidates.length > 0) {
+                    const cand = pendingIceCandidates.shift();
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(cand));
+                    } catch (e) {
+                        console.error('Ошибка применения отложенного кандидата:', e);
+                    }
+                }
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'answer',
+                        answer: answer
+                    }));
+                }
+            } catch (err) {
+                console.error('Ошибка обработки WebRTC Offer:', err);
+                showOverlay('Ошибка WebRTC', 'Не удалось установить видеосвязь. Повтор...', true);
+            }
+        }
+
+        function cleanupPeerConnection() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            pendingIceCandidates = [];
+        }
+
+        // Precise Coordinate Normalization (Letterbox / Pillarbox compensation)
+        function getNormalizedCoords(touch) {
+            const rect = video.getBoundingClientRect();
+            const vWidth = video.videoWidth || screenWidth || 1920;
+            const vHeight = video.videoHeight || screenHeight || 1080;
+
+            const containerRatio = rect.width / rect.height;
+            const videoRatio = vWidth / vHeight;
+
+            let renderWidth, renderHeight, offsetX, offsetY;
+
+            if (containerRatio > videoRatio) {
+                // Pillarbox: black bars on left and right
+                renderHeight = rect.height;
+                renderWidth = rect.height * videoRatio;
+                offsetX = (rect.width - renderWidth) / 2;
+                offsetY = 0;
+            } else {
+                // Letterbox: black bars on top and bottom
+                renderWidth = rect.width;
+                renderHeight = rect.width / videoRatio;
+                offsetX = 0;
+                offsetY = (rect.height - renderHeight) / 2;
+            }
+
+            const touchX = touch.clientX - rect.left - offsetX;
+            const touchY = touch.clientY - rect.top - offsetY;
+
+            const normX = Math.max(0, Math.min(1, touchX / renderWidth));
+            const normY = Math.max(0, Math.min(1, touchY / renderHeight));
+            const valid = touchX >= 0 && touchX <= renderWidth && touchY >= 0 && touchY <= renderHeight;
+
+            return { x: normX, y: normY, valid };
+        }
+
+        function showTapIndicator(clientX, clientY) {
+            const indicator = document.createElement('div');
+            indicator.className = 'tap-indicator';
+            indicator.style.left = `${clientX}px`;
+            indicator.style.top = `${clientY}px`;
+            document.body.appendChild(indicator);
+            setTimeout(() => indicator.remove(), 400);
+        }
+
+        // Touch Interaction State
+        let touchStartTime = 0;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let lastTouchY = 0;
+        let hasMoved = false;
+        let longPressTimer = null;
+        let lastMoveSentTime = 0;
+
+        function sendMoveThrottled(coords) {
+            const now = Date.now();
+            if (now - lastMoveSentTime > 16) { // ~60fps
+                lastMoveSentTime = now;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'input_move',
+                        x: coords.x,
+                        y: coords.y,
+                        screenWidth,
+                        screenHeight
+                    }));
+                }
+            }
+        }
+
+        window.addEventListener('touchstart', (e) => {
+            if (statusOverlay && !statusOverlay.classList.contains('hidden')) {
+                // If video was blocked by autoplay, allow tap to resume
+                if (video.paused && video.srcObject) {
+                    video.play().then(hideOverlay).catch(() => {});
+                }
+            }
+
+            if (e.target.closest('#controlBar') || e.target.closest('.status-overlay button')) {
+                return;
+            }
+
+            touchStartTime = Date.now();
+            hasMoved = false;
+
             if (e.touches.length === 1) {
-                // Перемещение курсора следом за пальцем
-                const coords = getNormalizedCoords(e.touches[0]);
+                const touch = e.touches[0];
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+
+                const coords = getNormalizedCoords(touch);
                 if (coords.valid) {
-                    ws.send(JSON.stringify({ type: 'input_move', x: coords.x, y: coords.y, screenWidth, screenHeight }));
+                    sendMoveThrottled(coords);
+                }
+
+                // Long press for Right Click detection
+                clearTimeout(longPressTimer);
+                longPressTimer = setTimeout(() => {
+                    if (!hasMoved && ws && ws.readyState === WebSocket.OPEN) {
+                        const currentCoords = getNormalizedCoords(touch);
+                        if (currentCoords.valid) {
+                            showTapIndicator(touch.clientX, touch.clientY);
+                            ws.send(JSON.stringify({
+                                type: 'input_tap',
+                                x: currentCoords.x,
+                                y: currentCoords.y,
+                                button: 'right',
+                                screenWidth,
+                                screenHeight
+                            }));
+                        }
+                    }
+                }, 500);
+
+            } else if (e.touches.length === 2) {
+                clearTimeout(longPressTimer);
+                lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            if (e.target.closest('#controlBar')) return;
+            e.preventDefault();
+
+            if (e.touches.length === 1) {
+                const touch = e.touches[0];
+                const dist = Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY);
+                if (dist > 8) {
+                    hasMoved = true;
+                    clearTimeout(longPressTimer);
+                }
+
+                const coords = getNormalizedCoords(touch);
+                if (coords.valid) {
+                    sendMoveThrottled(coords);
                 }
             } else if (e.touches.length === 2) {
-                // Прокрутка двумя пальцами
-                const currentY = e.touches[0].clientY;
+                clearTimeout(longPressTimer);
+                const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 const deltaY = lastTouchY - currentY;
                 lastTouchY = currentY;
 
-                ws.send(JSON.stringify({ type: 'input_scroll', deltaY }));
+                if (Math.abs(deltaY) > 1 && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'input_scroll',
+                        deltaY: deltaY * 3
+                    }));
+                }
             }
-        });
+        }, { passive: false });
 
-        video.addEventListener('touchend', (e) => {
+        window.addEventListener('touchend', (e) => {
+            clearTimeout(longPressTimer);
+            if (e.target.closest('#controlBar')) return;
+
             const touchDuration = Date.now() - touchStartTime;
 
-            // Если это был короткий касние (Tap) одним пальцем — делаем Клик
-            if (e.changedTouches.length === 1 && touchDuration < 300) {
-                const coords = getNormalizedCoords(e.changedTouches[0]);
-                if (coords.valid) {
+            if (e.changedTouches.length === 1 && !hasMoved && touchDuration < 400) {
+                const touch = e.changedTouches[0];
+                const coords = getNormalizedCoords(touch);
+
+                if (coords.valid && ws && ws.readyState === WebSocket.OPEN) {
+                    showTapIndicator(touch.clientX, touch.clientY);
+                    
+                    const buttonType = isRightClickNext ? 'right' : 'left';
                     ws.send(JSON.stringify({
                         type: 'input_tap',
                         x: coords.x,
                         y: coords.y,
-                        button: 'left',
+                        button: buttonType,
                         screenWidth,
                         screenHeight
                     }));
-                }
-            } 
-            // Долгое нажатие (> 500мс) — Правый клик
-            else if (e.changedTouches.length === 1 && touchDuration > 500) {
-                const coords = getNormalizedCoords(e.changedTouches[0]);
-                if (coords.valid) {
-                    ws.send(JSON.stringify({
-                        type: 'input_tap',
-                        x: coords.x,
-                        y: coords.y,
-                        button: 'right',
-                        screenWidth,
-                        screenHeight
-                    }));
+
+                    if (isRightClickNext) {
+                        isRightClickNext = false;
+                        btnRightClickMode.classList.remove('active');
+                        btnRightClickMode.innerText = '🖱️ ПКМ: Выкл';
+                    }
                 }
             }
         });
+
+        // Controls bar handlers
+        btnFullscreen.onclick = () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+                btnFullscreen.innerText = '⛶ Выйти из полного экрана';
+            } else {
+                document.exitFullscreen().catch(() => {});
+                btnFullscreen.innerText = '⛶ Во весь экран';
+            }
+        };
+
+        btnRightClickMode.onclick = () => {
+            isRightClickNext = !isRightClickNext;
+            if (isRightClickNext) {
+                btnRightClickMode.classList.add('active');
+                btnRightClickMode.innerText = '🖱️ ПКМ: Вкл (следующий тап)';
+            } else {
+                btnRightClickMode.classList.remove('active');
+                btnRightClickMode.innerText = '🖱️ ПКМ: Выкл';
+            }
+        };
+
+        btnReconnect.onclick = () => {
+            initConnection();
+        };
+
+        // Auto collapse controls bar after inactivity
+        let barTimeout = null;
+        function resetBarTimeout() {
+            controlBar.classList.remove('collapsed');
+            clearTimeout(barTimeout);
+            barTimeout = setTimeout(() => {
+                controlBar.classList.add('collapsed');
+            }, 4000);
+        }
+        window.addEventListener('touchstart', resetBarTimeout);
+        resetBarTimeout();
+
+        // Start connection
+        initConnection();
     </script>
 </body>
 </html>
